@@ -2,22 +2,43 @@
 File editor module for OpenHands Python 3.11 compatibility.
 
 This module provides file editing functionality compatible with Python 3.11.11.
+It integrates with the enhanced OHEditor class to provide a comprehensive file
+editing capability.
 """
 
+import json
 import os
 import re
 import tempfile
-import difflib
+import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Callable, Tuple
+from typing import Dict, List, Optional, Union, Callable, Tuple, Any
 
-from openhands_py311.editor.editor import OHEditor
+from openhands_py311.editor.editor import OHEditor, Command
+from openhands_py311.editor.encoding import EncodingManager
 from openhands_py311.editor.exceptions import ToolError
-from openhands_py311.editor.results import ToolResult
+from openhands_py311.editor.file_cache import FileCache
+from openhands_py311.editor.results import ToolResult, CLIResult
 from openhands_py311.utils.diff import get_diff
 
 # Create a global singleton instance of the editor
-_editor = OHEditor()
+# Use current directory as workspace root if not specified
+_GLOBAL_EDITOR = OHEditor(workspace_root=os.getcwd())
+
+def _make_api_tool_result(tool_result: ToolResult) -> str:
+    """Convert a ToolResult to a formatted output string.
+    
+    Args:
+        tool_result: The result to format.
+        
+    Returns:
+        Formatted output string.
+    """
+    if tool_result.error:
+        return f'ERROR:\n{tool_result.error}'
+
+    assert tool_result.output, 'Expected output in file_editor.'
+    return tool_result.output
 
 def _apply_edit_snippet(original_content: str, edit_snippet: str) -> str:
     """Apply an edit snippet to the original content.
@@ -52,10 +73,11 @@ def _apply_edit_snippet(original_content: str, edit_snippet: str) -> str:
     
     # Determine the comment style to use
     comment_style = None
-    for style, pattern in comment_styles.items():
+    pattern = None
+    for style, pat in comment_styles.items():
         if style in edit_snippet:
             comment_style = style
-            pattern = pattern
+            pattern = pat
             break
     
     # If no comment style detected, default to Python
@@ -65,8 +87,8 @@ def _apply_edit_snippet(original_content: str, edit_snippet: str) -> str:
     
     # Check if the edit snippet contains any comment markers
     contains_markers = False
-    for style, pattern in comment_styles.items():
-        if re.search(pattern, edit_snippet):
+    for style, pat in comment_styles.items():
+        if re.search(pat, edit_snippet):
             contains_markers = True
             break
     
@@ -80,8 +102,8 @@ def _apply_edit_snippet(original_content: str, edit_snippet: str) -> str:
     
     # Find all comment markers in the edit snippet
     markers = []
-    for style, pattern in comment_styles.items():
-        markers.extend(re.finditer(pattern, edit_snippet))
+    for style, pat in comment_styles.items():
+        markers.extend(re.finditer(pat, edit_snippet))
     
     # Sort markers by their position in the edit snippet
     markers.sort(key=lambda m: m.start())
@@ -170,11 +192,80 @@ def _apply_edit_snippet(original_content: str, edit_snippet: str) -> str:
     
     return '\n'.join(result)
 
-def file_editor(file_path: str, edit_snippet: str) -> Dict:
+def file_editor(
+    command: str,
+    path: str,
+    file_text: Optional[str] = None,
+    view_range: Optional[List[int]] = None,
+    old_str: Optional[str] = None,
+    new_str: Optional[str] = None,
+    insert_line: Optional[int] = None,
+    enable_linting: bool = False,
+) -> str:
+    """Edit, view, or create a file.
+    
+    This function provides a comprehensive interface to the file editor functionality,
+    including viewing, creating, and editing files.
+    
+    Args:
+        command: Editor command to execute (view, create, str_replace, insert, undo_edit).
+        path: Path to the file.
+        file_text: Text content for create command.
+        view_range: Range of lines to view [start, end].
+        old_str: String to replace in str_replace command.
+        new_str: Replacement string in str_replace or text to insert in insert command.
+        insert_line: Line number to insert at in insert command.
+        enable_linting: Whether to run linting on the changes.
+        
+    Returns:
+        Formatted result string with JSON result data.
+        
+    Raises:
+        ToolError: If the file operation fails.
+    """
+    result: Optional[ToolResult] = None
+    try:
+        result = _GLOBAL_EDITOR(
+            command=command,
+            path=path,
+            file_text=file_text,
+            view_range=view_range,
+            old_str=old_str,
+            new_str=new_str,
+            insert_line=insert_line,
+            enable_linting=enable_linting,
+        )
+    except ToolError as e:
+        result = ToolResult(error=e.message)
+
+    formatted_output_and_error = _make_api_tool_result(result)
+    marker_id = uuid.uuid4().hex
+
+    # Generate JSON result with formatted output
+    def json_generator() -> str:
+        yield '{'
+        first = True
+        for key, value in result.to_dict().items():
+            if not first:
+                yield ','
+            first = False
+            yield f'"{key}": {json.dumps(value)}'
+        yield f', "formatted_output_and_error": {json.dumps(formatted_output_and_error)}'
+        yield '}'
+
+    return (
+        f'<oh_aci_output_{marker_id}>\n'
+        + ''.join(json_generator())
+        + f'\n</oh_aci_output_{marker_id}>'
+    )
+
+def edit_file_snippet(file_path: str, edit_snippet: str) -> Dict[str, Any]:
     """Edit a file using the provided edit snippet.
     
     This function provides an intelligent file editing capability that can apply
     targeted changes to specific portions of a file based on the edit snippet.
+    
+    This is maintained for backward compatibility with the previous API.
     
     Args:
         file_path: Path to the file to edit.
@@ -187,10 +278,23 @@ def file_editor(file_path: str, edit_snippet: str) -> Dict:
         ToolError: If the file cannot be edited.
     """
     try:
+        # Make sure the path is absolute
+        if not os.path.isabs(file_path):
+            file_path = os.path.abspath(file_path)
+            
         # Check if the file exists
         if os.path.exists(file_path):
             # Read the file
-            original_content = _editor.read_file(file_path)
+            original_content = ""
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+            except UnicodeDecodeError:
+                # Try to detect encoding
+                encoding_manager = EncodingManager()
+                encoding = encoding_manager.get_encoding(Path(file_path))
+                with open(file_path, 'r', encoding=encoding) as f:
+                    original_content = f.read()
             
             # Create a backup of the original file
             backup_path = f"{file_path}.bak"
@@ -203,27 +307,56 @@ def file_editor(file_path: str, edit_snippet: str) -> Dict:
             # Generate a diff for logging/debugging
             diff = get_diff(original_content, updated_content)
             
-            # Write the updated content back to the file
-            result = _editor.write_file(file_path, updated_content)
-            
-            # Add the diff to the result data
-            result.data['diff'] = diff
+            # Write the content using a simple write approach for compatibility
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(updated_content)
+                success = True
+                message = f"File {file_path} edited successfully."
+            except Exception as write_error:
+                success = False
+                message = f"Error writing file: {str(write_error)}"
+                # Restore from backup
+                with open(backup_path, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(original_content)
             
             # Clean up the backup if everything went well
             if os.path.exists(backup_path):
                 os.remove(backup_path)
+                
+            return {
+                "success": success,
+                "message": message,
+                "file_path": file_path,
+                "diff": diff
+            }
         else:
             # Create the file with the edit snippet
             # For new files, we just use the edit snippet as is
-            result = _editor.write_file(file_path, edit_snippet)
-            result.data['diff'] = get_diff("", edit_snippet)
-        
-        return {
-            "success": result.success,
-            "message": result.message,
-            "file_path": file_path,
-            "diff": result.data.get('diff', '')
-        }
+            try:
+                # Ensure the directory exists
+                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(edit_snippet)
+                
+                diff = get_diff("", edit_snippet)
+                return {
+                    "success": True,
+                    "message": f"File {file_path} created successfully.",
+                    "file_path": file_path,
+                    "diff": diff
+                }
+            except Exception as create_error:
+                return {
+                    "success": False,
+                    "message": f"Error creating file: {str(create_error)}",
+                    "file_path": file_path,
+                    "diff": ""
+                }
+            
     except Exception as e:
         # If there was an error and we have a backup, restore it
         backup_path = f"{file_path}.bak"
