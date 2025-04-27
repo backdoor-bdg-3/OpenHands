@@ -1,18 +1,20 @@
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from openhands.core.config import LLMConfig
 from openhands.core.logger import openhands_logger as logger
 from openhands.llm.metrics import Metrics
+from openhands.llm.llm import LLM
 from openhands.llm.vllm_starcoder import VLLMStarCoder
 
 def create_llm(
     config: LLMConfig,
     metrics: Optional[Metrics] = None,
     retry_listener: Any = None,
-) -> VLLMStarCoder:
+) -> Union[LLM, VLLMStarCoder]:
     """Create a new LLM instance.
     
-    This factory always returns a VLLMStarCoder instance, regardless of the config.
+    Factory that creates an LLM instance based on the config.
+    For Hugging Face models, it uses the standard LLM implementation.
     
     Args:
         config: The LLM configuration.
@@ -20,7 +22,12 @@ def create_llm(
         retry_listener: Optional retry listener.
         
     Returns:
-        A VLLMStarCoder instance.
+        An LLM or VLLMStarCoder instance depending on the config.
     """
-    logger.info("Creating VLLMStarCoder instance (hardcoded model)")
+    if config.model.startswith('huggingface'):
+        logger.info(f"Creating LLM instance for Hugging Face model: {config.model}")
+        return LLM(config, metrics, retry_listener)
+    
+    # Default to VLLMStarCoder for compatibility with existing code
+    logger.info("Creating VLLMStarCoder instance for default case")
     return VLLMStarCoder(config, metrics, retry_listener)
