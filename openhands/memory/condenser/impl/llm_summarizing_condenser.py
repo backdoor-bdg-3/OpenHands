@@ -5,7 +5,7 @@ from openhands.core.message import Message, TextContent
 from openhands.events.action.agent import CondensationAction
 from openhands.events.observation.agent import AgentCondensationObservation
 from openhands.events.serialization.event import truncate_content
-from openhands.llm import LLM
+from openhands.llm import VLLMStarCoder as ModelClient
 from openhands.memory.condenser.condenser import (
     Condensation,
     RollingCondenser,
@@ -23,7 +23,7 @@ class LLMSummarizingCondenser(RollingCondenser):
 
     def __init__(
         self,
-        llm: LLM,
+        model_client,
         max_size: int = 100,
         keep_first: int = 1,
         max_event_length: int = 10_000,
@@ -40,7 +40,7 @@ class LLMSummarizingCondenser(RollingCondenser):
         self.max_size = max_size
         self.keep_first = keep_first
         self.max_event_length = max_event_length
-        self.llm = llm
+        self.model_client = model_client
 
         super().__init__()
 
@@ -131,14 +131,14 @@ CURRENT_STATE: Last flip: Heads, Haiku count: 15/20"""
 
         messages = [Message(role='user', content=[TextContent(text=prompt)])]
 
-        response = self.llm.completion(
-            messages=self.llm.format_messages_for_llm(messages),
+        response = self.model_client.completion(
+            messages=self.model_client.format_messages_for_llm(messages),
             extra_body={'metadata': self._llm_metadata},
         )
         summary = response.choices[0].message.content
 
         self.add_metadata('response', response.model_dump())
-        self.add_metadata('metrics', self.llm.metrics.get())
+        self.add_metadata('metrics', self.model_client.metrics.get())
 
         return Condensation(
             action=CondensationAction(
@@ -162,8 +162,9 @@ CURRENT_STATE: Last flip: Heads, Haiku count: 15/20"""
         llm_config = config.llm_config.model_copy()
         llm_config.caching_prompt = False
 
+        # Use the VLLMStarCoder client which now supports Hugging Face models
         return LLMSummarizingCondenser(
-            llm=LLM(config=llm_config),
+            model_client=ModelClient(config=llm_config),
             max_size=config.max_size,
             keep_first=config.keep_first,
             max_event_length=config.max_event_length,
