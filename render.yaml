@@ -8,23 +8,34 @@ services:
       curl -sSL https://install.python-poetry.org | python3 - && 
       export PATH="/tmp/poetry/bin:$PATH" && 
       poetry && 
+      poetry lock && 
       poetry install &&
       cd frontend && 
       npm install && 
       npm run build
-    startCommand: export POETRY_HOME="/tmp/poetry" && export PATH="/tmp/poetry/bin:$PATH" && export SERVE_FRONTEND=true && poetry run python -m openhands.server.main
+    startCommand: export POETRY_HOME="/tmp/poetry" && export PATH="/tmp/poetry/bin:$PATH" && export SERVE_FRONTEND=true && export HF_TOKEN="${HF_TOKEN}" && export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}" && poetry run python -m openhands.server.main
     envVars:
       - key: LLM_MODEL
         value: huggingface/meta-llama/CodeLlama-13b-Instruct-hf
       - key: LLM_API_KEY
-        value: "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" # Replace with your actual API key
+        sync: HF_TOKEN
+      - key: HF_TOKEN
+        sync: HF_TOKEN
+      - key: HUGGING_FACE_HUB_TOKEN
+        sync: HF_TOKEN
+      - key: LLM_BASE_URL
+        value: "https://api-inference.huggingface.co/models/meta-llama/CodeLlama-13b-Instruct-hf"
       - key: LLM_TEMPERATURE
         value: 0.1
       - key: LLM_MAX_OUTPUT_TOKENS
         value: 1024
+      - key: LLM_TIMEOUT
+        value: 120
       - key: PORT
         value: 8000
       - key: SERVE_FRONTEND
+        value: "true"
+      - key: DISABLE_MODEL_SELECTION
         value: "true"
     plan: free
     autoDeploy: false
@@ -43,6 +54,8 @@ services:
           property: host
       - key: VITE_USE_TLS
         value: true
+      - key: VITE_DISABLE_MODEL_SELECTION
+        value: "true"
       - key: PORT
         value: 10000
     plan: free
