@@ -40,6 +40,8 @@ import { clearFiles, clearInitialPrompt } from "#/state/initial-query-slice";
 import { RootState } from "#/store";
 import { displayErrorToast } from "#/utils/custom-toast-handlers";
 import { useDocumentTitleFromState } from "#/hooks/use-document-title-from-state";
+import { FloatingTerminalButton } from "#/components/features/terminal/floating-terminal-button";
+import { useLocation } from "react-router-dom";
 
 function AppContent() {
   useConversationConfig();
@@ -55,8 +57,9 @@ function AppContent() {
   const { curAgentState } = useSelector((state: RootState) => state.agent);
   const dispatch = useDispatch();
   const endSession = useEndSession();
+  const location = useLocation();
+  const showFloatingTerminalButton = !location.pathname.includes("/terminal");
 
-  // Set the document title to the conversation title when available
   useDocumentTitleFromState();
 
   const [width, setWidth] = React.useState(window.innerWidth);
@@ -215,6 +218,7 @@ function AppContent() {
               securityAnalyzer={settings.SECURITY_ANALYZER}
             />
           )}
+          {showFloatingTerminalButton && <FloatingTerminalButton />}
         </div>
       </EventHandler>
     </WsClientProvider>
