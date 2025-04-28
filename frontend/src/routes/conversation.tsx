@@ -6,6 +6,7 @@ import { FaServer, FaExternalLinkAlt } from "react-icons/fa";
 import { useTranslation } from "react-i18next";
 import { DiGit } from "react-icons/di";
 import { VscCode } from "react-icons/vsc";
+import { RiRobot2Line } from "react-icons/ri";
 import { I18nKey } from "#/i18n/declaration";
 import { RUNTIME_INACTIVE_STATES } from "#/types/agent-state";
 import {
@@ -22,7 +23,6 @@ import JupyterIcon from "#/icons/jupyter.svg?react";
 import TerminalIcon from "#/icons/terminal.svg?react";
 import { clearJupyter } from "#/state/jupyter-slice";
 
-import { ChatInterface } from "../components/features/chat/chat-interface";
 import { WsClientProvider } from "#/context/ws-client-provider";
 import { EventHandler } from "../wrapper/event-handler";
 import { useConversationConfig } from "#/hooks/query/use-conversation-config";
@@ -115,86 +115,81 @@ function AppContent() {
     if (width <= 640) {
       return (
         <div className="rounded-xl overflow-hidden border border-neutral-600 w-full bg-base-secondary">
-          <ChatInterface />
+          <Outlet />
         </div>
       );
     }
     return (
-      <ResizablePanel
-        orientation={Orientation.HORIZONTAL}
-        className="grow h-full min-h-0 min-w-0"
-        initialSize={500}
-        firstClassName="rounded-xl overflow-hidden border border-neutral-600 bg-base-secondary"
-        secondClassName="flex flex-col overflow-hidden"
-        firstChild={<ChatInterface />}
-        secondChild={
-          <Container
-            className="h-full w-full"
-            labels={[
-              {
-                label: "Changes",
-                to: "",
-                icon: <DiGit className="w-6 h-6" />,
-              },
-              {
-                label: (
-                  <div className="flex items-center gap-1">
-                    {t(I18nKey.VSCODE$TITLE)}
-                  </div>
-                ),
-                to: "vscode",
-                icon: <VscCode className="w-5 h-5" />,
-                rightContent: !RUNTIME_INACTIVE_STATES.includes(
-                  curAgentState,
-                ) ? (
-                  <FaExternalLinkAlt
-                    className="w-3 h-3 text-neutral-400 cursor-pointer"
-                    onClick={async (e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (conversationId) {
-                        try {
-                          const response = await fetch(
-                            `/api/conversations/${conversationId}/vscode-url`,
-                          );
-                          const data = await response.json();
-                          if (data.vscode_url) {
-                            window.open(data.vscode_url, "_blank");
-                          }
-                        } catch (err) {
-                          // Silently handle the error
-                        }
+      <Container
+        className="h-full w-full"
+        labels={[
+          {
+            label: "AI Assistant",
+            to: "ai",
+            icon: <RiRobot2Line className="w-5 h-5" />,
+          },
+          {
+            label: "Changes",
+            to: "",
+            icon: <DiGit className="w-6 h-6" />,
+          },
+          {
+            label: (
+              <div className="flex items-center gap-1">
+                {t(I18nKey.VSCODE$TITLE)}
+              </div>
+            ),
+            to: "vscode",
+            icon: <VscCode className="w-5 h-5" />,
+            rightContent: !RUNTIME_INACTIVE_STATES.includes(
+              curAgentState,
+            ) ? (
+              <FaExternalLinkAlt
+                className="w-3 h-3 text-neutral-400 cursor-pointer"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (conversationId) {
+                    try {
+                      const response = await fetch(
+                        `/api/conversations/${conversationId}/vscode-url`,
+                      );
+                      const data = await response.json();
+                      if (data.vscode_url) {
+                        window.open(data.vscode_url, "_blank");
                       }
-                    }}
-                  />
-                ) : null,
-              },
-              {
-                label: t(I18nKey.WORKSPACE$TERMINAL_TAB_LABEL),
-                to: "terminal",
-                icon: <TerminalIcon />,
-              },
-              { label: "Jupyter", to: "jupyter", icon: <JupyterIcon /> },
-              {
-                label: <ServedAppLabel />,
-                to: "served",
-                icon: <FaServer />,
-              },
-              {
-                label: (
-                  <div className="flex items-center gap-1">
-                    {t(I18nKey.BROWSER$TITLE)}
-                  </div>
-                ),
-                to: "browser",
-                icon: <GlobeIcon />,
-              },
-            ]}
-          >
-            <Outlet />
-          </Container>
-        }
-      />
+                    } catch (err) {
+                      // Silently handle the error
+                    }
+                  }
+                }}
+              />
+            ) : null,
+          },
+          {
+            label: t(I18nKey.WORKSPACE$TERMINAL_TAB_LABEL),
+            to: "terminal",
+            icon: <TerminalIcon />,
+          },
+          { label: "Jupyter", to: "jupyter", icon: <JupyterIcon /> },
+          {
+            label: <ServedAppLabel />,
+            to: "served",
+            icon: <FaServer />,
+          },
+          {
+            label: (
+              <div className="flex items-center gap-1">
+                {t(I18nKey.BROWSER$TITLE)}
+              </div>
+            ),
+            to: "browser",
+            icon: <GlobeIcon />,
+          },
+        ]}
+      >
+        <Outlet />
+      </Container>
     );
   }
 
